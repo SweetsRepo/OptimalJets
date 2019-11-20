@@ -1,7 +1,6 @@
 package com.example.optimaljets;
 
-import android.os.Bundle;
-
+import java.lang.Math;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import android.view.Menu;
@@ -17,8 +16,14 @@ import android.widget.TextView;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener{
 
+    // Each of the required sensor types for computing air density as a percentage
     private SensorManager sensorManager;
-    private Sensor pressure;
+    private Sensor pressureSensor;
+    private Sensor humiditySensor;
+    private Sensor temperatureSensor;
+    private float pressure;
+    private float humidity;
+    private float temperature;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -29,7 +34,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         // Assign instances of the sensor manager and pressure sensor on the device
         sensorManager = (SensorManager)getSystemService(Context.SENSOR_SERVICE);
-        pressure = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
+        pressureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
+        humiditySensor = sensorManager.getDefaultSensor(Sensor.TYPE_RELATIVE_HUMIDITY);
+        temperatureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE);
     }
 
     @Override
@@ -61,19 +68,40 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     @Override
     public final void onSensorChanged(SensorEvent event){
-        if(event.sensor.getType() != Sensor.TYPE_PRESSURE)
+        int sensorType = event.sensor.getType();
+        if(sensorType == Sensor.TYPE_PRESSURE) {
+            pressure = event.values[0];
+        } else if(sensorType == Sensor.TYPE_RELATIVE_HUMIDITY) {
+            humidity = event.values[0];
+        } else if(sensorType == Sensor.TYPE_AMBIENT_TEMPERATURE) {
+            temperature = event.values[0];
+        } else {
             return;
-        float millibarsOfPressure = event.values[0];
-        // TODO: Convert mBar to hPa
-        // TODO: Collect Temperature in K or C as well as RH
+        }
+        // https://www.omnicalculator.com/physics/air-density#how-to-calculate-the-air-density
+        // https://developer.android.com/guide/topics/sensors/sensors_environment.html#java
+        // Constants used in the calculation
+        final double RD = 287.058;
+        final double RV = 461.495;
+        final double M = 17.62;
+        final double TN = 243.12;
+        double dp_comp = Math.log(humidity/100) + (M * temperature) / (TN + temperature);
+        double dp = TN * dp_comp / (M - dp_comp);
+        double p1 = 6.1078 * Math.pow(10, 7.5 * dp / (dp + 237.3));
+        double pv = p1 * humidity;
+        double pd = pressure - pv;
+        double p = (pd / (RD * (temperature+273.15))) + (pv / (RV * (temperature+273.15)));
+
         TextView jetSize = (TextView)findViewById(R.id.jetSize);
-        jetSize.setText(String.valueOf(millibarsOfPressure));
+        jetSize.setText(String.valueOf(p));
     }
 
     @Override
     protected void onResume(){
         super.onResume();
-        sensorManager.registerListener(this, pressure, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, pressureSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, humiditySensor, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, temperatureSensor, SensorManager.SENSOR_DELAY_NORMAL);
     }
 
     @Override
