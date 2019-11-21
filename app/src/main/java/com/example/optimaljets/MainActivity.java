@@ -85,13 +85,25 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         final double RV = 461.495;
         final double M = 17.62;
         final double TN = 243.12;
-        double dp_comp = Math.log(humidity/100) + (M * temperature) / (TN + temperature);
-        double dp = TN * dp_comp / (M - dp_comp);
+        // Convert humidity into a decimal
+        humidity /= 100;
+        double a = Math.log(humidity) + (M * temperature) / (TN + temperature);
+        double dp = TN * a / (M - a);
         double p1 = 6.1078 * Math.pow(10, 7.5 * dp / (dp + 237.3));
         double pv = p1 * humidity;
         double pd = pressure - pv;
-        double p = (pd / (RD * (temperature+273.15))) + (pv / (RV * (temperature+273.15)));
+        // Pressure in kg/m^3
+        double p = 100*(pd / (RD * (temperature+273.15))) + (pv / (RV * (temperature+273.15)));
 
+        // ISA states that pressure at sea level is 1.225kg/m^3. Divide and multiply by 100 to get %
+        p /= 1.225;
+        p *= 100;
+
+        // Finally compute the optimal jet size using a 3rd order polynomial fit
+//        [0.0000566765, -0.030350453, 5.67665149,   -243.6794945408] - Air Density
+//        [0.0000295062, -0.001188024, 0.4394775474, 59.7138049727] - Air Density Inv
+//        [0.0000010303, -0.001901179, 1.4186186963, -159.3889027293] - Jet Size
+//        [0.0000175017, 0.0002019229, 1.0232220687, 137.4920938274] - Jet Size Inv
         TextView jetSize = (TextView)findViewById(R.id.jetSize);
         jetSize.setText(String.valueOf(p));
     }
@@ -99,9 +111,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     @Override
     protected void onResume(){
         super.onResume();
-        sensorManager.registerListener(this, pressureSensor, SensorManager.SENSOR_DELAY_NORMAL);
-        sensorManager.registerListener(this, humiditySensor, SensorManager.SENSOR_DELAY_NORMAL);
-        sensorManager.registerListener(this, temperatureSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(
+                this,
+                pressureSensor,
+                SensorManager.SENSOR_DELAY_NORMAL
+        );
+        sensorManager.registerListener(
+                this,
+                humiditySensor,
+                SensorManager.SENSOR_DELAY_NORMAL
+        );
+        sensorManager.registerListener(
+                this,
+                temperatureSensor,
+                SensorManager.SENSOR_DELAY_NORMAL
+        );
     }
 
     @Override
