@@ -3,18 +3,28 @@ package com.example.optimaljets;
 import java.lang.Math;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+
+import android.content.SharedPreferences;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.app.Activity;
 import android.os.Bundle;
 import android.content.Context;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.view.View;
+import android.widget.EditText;
 import android.widget.TextView;
 
-public class MainActivity extends AppCompatActivity implements SensorEventListener{
+public class MainActivity extends AppCompatActivity implements SensorEventListener {
+    // Shared preferences store for baseline data
+    private SharedPreferences baseline;
+    private boolean blSet = false;
+    private int blJetSize;
+    private float blAirDensity;
+    EditText baselineJetSize;
+    EditText baselineAirDensity;
 
     // Each of the required sensor types for computing air density as a percentage
     private SensorManager sensorManager;
@@ -24,6 +34,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private float pressure;
     private float humidity;
     private float temperature;
+    private double p;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -31,6 +42,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         setContentView(R.layout.activity_main);
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
+
+        // Get previously stored baselines from shared preferences
+        // Note that the code will not output a jet size until a baseline has been entered
+        baselineJetSize = (EditText)findViewById(R.id.baselineJetSize);
+        baselineAirDensity = (EditText)findViewById(R.id.baselineAirDensity);
+        baseline = getApplicationContext().getSharedPreferences("data",0);
+        System.out.println(baseline);
+        if(baseline.contains("JetSize")){
+            blSet = true;
+            blJetSize = baseline.getInt("JetSize",0);
+            baselineJetSize.setText(String.valueOf(blJetSize));
+        }
+        if(baseline.contains("AirDensity")){
+            blSet = true;
+            blAirDensity = baseline.getFloat("AirDensity",0);
+            baselineAirDensity.setText(String.valueOf(blAirDensity));
+        }
 
         // Assign instances of the sensor manager and pressure sensor on the device
         sensorManager = (SensorManager)getSystemService(Context.SENSOR_SERVICE);
@@ -93,19 +121,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         double pv = p1 * humidity;
         double pd = pressure - pv;
         // Pressure in kg/m^3
-        double p = 100*(pd / (RD * (temperature+273.15))) + (pv / (RV * (temperature+273.15)));
+        p = 100*(pd / (RD * (temperature+273.15))) + (pv / (RV * (temperature+273.15)));
 
         // ISA states that pressure at sea level is 1.225kg/m^3. Divide and multiply by 100 to get %
         p /= 1.225;
         p *= 100;
 
-        // Finally compute the optimal jet size using a 3rd order polynomial fit
-//        [0.0000566765, -0.030350453, 5.67665149,   -243.6794945408] - Air Density
-//        [0.0000295062, -0.001188024, 0.4394775474, 59.7138049727] - Air Density Inv
-//        [0.0000010303, -0.001901179, 1.4186186963, -159.3889027293] - Jet Size
-//        [0.0000175017, 0.0002019229, 1.0232220687, 137.4920938274] - Jet Size Inv
-        TextView jetSize = (TextView)findViewById(R.id.jetSize);
-        jetSize.setText(String.valueOf(p));
+        // Finally compute the optimal jet size using a 3rd order polynomial fit if baseline is set
+        if(blSet) {
+            int optimalJetSize = jetSizeLookup(p);
+            TextView jetSize = (TextView) findViewById(R.id.jetSize);
+            jetSize.setText(String.valueOf(optimalJetSize));
+        }
     }
 
     @Override
@@ -132,5 +159,80 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     protected void onPause(){
         super.onPause();
         sensorManager.unregisterListener(this);
+    }
+
+    /**
+     * Accepts baseline parameter settings when clicking on button in gui and stores results
+     * @param view
+     */
+    public void acceptBaseline(View view){
+        String jetSizeString = baselineJetSize.getText().toString();
+        String airDensityString = baselineAirDensity.getText().toString();
+
+        // Do nothing further if jet size baseline hasn't been specified
+        if(!jetSizeString.isEmpty()) {
+            SharedPreferences.Editor editor = baseline.edit();
+            // Remove old values for baseline
+            editor.clear();
+            editor.apply();
+
+            blJetSize = Integer.valueOf(jetSizeString);
+            // Air Density can either be entered, or current value can be taken
+            if (!airDensityString.isEmpty()) {
+                blAirDensity = Float.valueOf(airDensityString);
+            } else {
+                blAirDensity = (float) p;
+                baselineAirDensity.setText(String.valueOf(Math.round(p)));
+            }
+
+            editor.putInt("JetSize", blJetSize);
+            editor.putFloat("AirDensity", blAirDensity);
+            editor.apply();
+            blSet = true;
+        }
+    }
+
+    /**
+     * Given the baseline jet-size and air density values and the current air density, computes
+     * the new optimal jet size to use.
+     * @param p - Relative Air Density (%)
+     * @return Jet Size
+     */
+    protected int jetSizeLookup(double p){
+        double featureSpace = jetSizeFunc(blJetSize);
+        featureSpace += Math.abs(airDensityFunc(blAirDensity) - airDensityFunc(p));
+        return jetSizeInv(featureSpace);
+    }
+
+    /**
+     * Uses the coefficients resulting from a 3rd order polynomial fit to map changes in air density
+     * to a feature space shared with jet sizing
+     * @param x - Air Density in %
+     * @return Feature space encoded value
+     */
+    private double airDensityFunc(double x){
+        return 0.0000566765*Math.pow(x,3)-0.030350453*Math.pow(x,2)+5.67665149*x-243.679494541;
+    }
+
+    /**
+     * Uses the coefficients resulting from a 3rd order polynomial fit to map changes in jet sizes
+     * to a feature space shared with air density
+     * @param x - Jet size in mm
+     * @return Feature space encoded value
+     */
+    private double jetSizeFunc(int x){
+        return 0.0000010303*Math.pow(x,3)-0.001901179*Math.pow(x,2)+1.4186186963*x-159.3889027293;
+    }
+
+    /**
+     * Uses the coefficients resulting from a 3rd order polynomial fit to map changes in the shared
+     * feature space into a physical jet size
+     * @param x - Feature space values
+     * @return Jet Size to use
+     */
+    private int jetSizeInv(double x){
+        double js;
+        js = 0.0000175017*Math.pow(x,3)+0.0002019229*Math.pow(x,2)+1.0232220687*x+137.4920938274;
+        return (int)js;
     }
 }
