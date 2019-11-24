@@ -3,7 +3,6 @@ package com.example.optimaljets;
 import java.lang.Math;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
-
 import android.content.SharedPreferences;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -201,7 +200,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     protected int jetSizeLookup(double p){
         double featureSpace = jetSizeFunc(blJetSize);
         featureSpace += Math.abs(airDensityFunc(blAirDensity) - airDensityFunc(p));
-        return jetSizeInv(featureSpace);
+        // Round up to the nearest 5mm jet size
+        return (int)(Math.ceil((double)jetSizeInv(featureSpace) / 5) * 5);
     }
 
     /**
