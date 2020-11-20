@@ -6,8 +6,12 @@ import androidx.appcompat.widget.Toolbar;
 import android.content.SharedPreferences;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.os.BatteryManager;
 import android.os.Bundle;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -34,6 +38,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private float humidity;
     private float temperature;
     private double p;
+
+    // Trying to get ambient temperature through the battery temperature instead
+    IntentFilter intentFilter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,8 +70,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sensorManager = (SensorManager)getSystemService(Context.SENSOR_SERVICE);
         pressureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
         humiditySensor = sensorManager.getDefaultSensor(Sensor.TYPE_RELATIVE_HUMIDITY);
-        temperatureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE);
+//        temperatureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE);
+
+        intentFilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+        MainActivity.this.registerReceiver(broadcastReceiver,intentFilter);
+
+
     }
+    private BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            temperature = (float)(intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE,0))/10;
+            TextView tempText = (TextView) findViewById(R.id.tempText);
+            tempText.setText(String.valueOf(temperature));
+        }
+    };
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -96,12 +116,22 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     @Override
     public final void onSensorChanged(SensorEvent event){
         int sensorType = event.sensor.getType();
-        if(sensorType == Sensor.TYPE_PRESSURE) {
-            pressure = event.values[0];
-        } else if(sensorType == Sensor.TYPE_RELATIVE_HUMIDITY) {
+//        if(sensorType == Sensor.TYPE_AMBIENT_TEMPERATURE) {
+//            temperature = event.values[0];
+//            TextView tempText = (TextView) findViewById(R.id.tempText);
+//            tempText.setText(String.valueOf(temperature));
+//        }
+        if(sensorType == Sensor.TYPE_RELATIVE_HUMIDITY) {
             humidity = event.values[0];
-        } else if(sensorType == Sensor.TYPE_AMBIENT_TEMPERATURE) {
-            temperature = event.values[0];
+            TextView humidityText = (TextView) findViewById(R.id.humidityText);
+            humidityText.setText(String.valueOf(humidity));
+            if(humidity <= 0.1) {
+                humidity = 1;
+            }
+        } else if(sensorType == Sensor.TYPE_PRESSURE) {
+            pressure = event.values[0];
+            TextView pressureText = (TextView) findViewById(R.id.pressureText);
+            pressureText.setText(String.valueOf(pressure));
         } else {
             return;
         }
